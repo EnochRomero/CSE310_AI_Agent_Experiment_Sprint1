@@ -1,0 +1,141 @@
+STARBOUND STEPS - SOFTWARE INFRASTRUCTURE
+==========================================
+
+OVERVIEW
+--------
+Small, single-process desktop platform game with a scrolling, endless level.
+Python runs the game code; Pygame provides the window, keyboard events, frame
+clock, rectangles, and drawing.
+
+
+RUNTIME COMPONENTS
+------------------
+
+    Keyboard/window events
+        |
+        v
+    +-------+------------------+       +----------------------+
+    | run()                    |------>| make_level()         |
+    | input, loop, camera,     |creates| Player + PlatformWorld|
+    | and frame rendering      |       +----------+-----------+
+    +----+---------------+-----+                  |
+       |               |                        | nearby platform Rects
+       |               v                        v
+       |       +-------+----------------+  +-----+------------------+
+       |       | World-to-screen camera |  | Player.update()       |
+       |       | offset follows player  |  | move, jump, gravity,  |
+       |       +------------------------+  | and platform collision|
+       |                                   +------------------------+
+       |                                           ^
+       |                                           | direction, jump,
+       |                                           | and delta time
+       |                                           |
+       |                                   +-------+--------+
+       |                                   | Player state  |
+       |                                   | world position|
+       |                                   +----------------+
+       v
+    +---------------------------+        +--------------------------+
+    | Pygame display            |        | PlatformWorld             |
+    | background, visible ground,|<-------| creates/reuses nearby     |
+    | raised platforms, player, | draws  | deterministic chunks      |
+    | and control text          |        | in both directions        |
+    +-------------+-------------+        +-------------+------------+
+          ^                                    |
+          |                                    | seeded by chunk index
+    +-------------+------------------+      +----------v-------------+
+    | Pygame: window, events, clock,  |      | Each chunk:             |
+    | Rect, drawing, and font         |      | ground + raised ledges  |
+    +-------------+------------------+      +------------------------+
+          ^
+          | installed from
+    +-------------+------------+
+    | requirements.txt         |
+    | pygame >=2.5, <3         |
+    +--------------------------+
+
+
+PER-FRAME FLOW
+--------------
+  1. Pygame clock supplies elapsed time (delta time).
+  2. run() reads quit, jump, movement, and restart input.
+  3. Player.update() changes world position, applies jumping/gravity, and
+     resolves platform collisions.
+  4. Enemies patrol. A top collision stomps an enemy; a side collision enters
+     the game-over state.
+  5. run() centers the camera on the player and generates nearby chunks.
+  6. Pygame draws the world and detailed sprites; the death overlay appears
+     while game-over is active.
+  7. The display flips to show the completed frame; then the loop repeats.
+
+
+    ENEMY AND SPRITE FLOW
+    ---------------------
+      PlatformWorld chunk
+      +--------------------------------+
+      | ground + raised platform Rects  |
+      | one bounded-patrol Enemy        |
+      +---------------+----------------+
+                |
+         +----------+-----------+
+         |                      |
+         v                      v
+        Enemy.update(dt)      resolve_player_collision()
+        patrol and reverse    side contact enters game-over
+        at chunk boundaries   top contact stomps/removes enemy
+                        |
+                        v
+                    world.enemies excludes
+                    defeated enemies
+
+      game-over state --> dark overlay + death message
+              --> R restarts level / Esc quits
+
+      run() --> draw_player()/draw_enemy() --> Pygame shape drawing
+            layered character details     rectangles, ellipses, polygons,
+            and directional enemy pupils  circles, and lines
+
+
+PROJECT FILES
+-------------
+  game.py
+    Application entry point, Player and Enemy behavior, procedural chunk
+    generation, camera-following game loop, input handling, and sprite drawing.
+
+  requirements.txt
+    External runtime dependency: Pygame.
+
+  tests/test_game.py
+    Python unittest tests for physics, enemy patrol/stomping/side hits, leftward
+    travel, and chunk generation in both directions. Tests import game
+    components from game.py.
+
+  README.md
+    Installation, launch, controls, and test commands.
+
+  changelog.md
+    Implementation process and verification notes.
+
+  AGENTS.md
+    Project development, testing, and maintenance guidance.
+
+
+TEST FLOW
+---------
+  python -m unittest discover -s tests -v
+      |
+      v
+    tests/test_game.py --> imports Player and PlatformWorld from game.py
+      |
+      +--> uses pygame.Rect as the platform collision shape
+      +--> checks movement/physics state with deterministic delta times
+      +--> checks that world chunks extend left and right as the camera moves
+      +--> checks enemy patrol limits and stomp collision behavior
+      +--> checks that side contact is reported as a fatal hit
+
+
+NOT CURRENTLY INCLUDED
+----------------------
+No separate server, database, network service, asset files, audio system, or
+save system. Platforms and enemies are generated from chunk indices; character
+sprites are drawn from Pygame primitives.
